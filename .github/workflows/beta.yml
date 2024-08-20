@@ -1,0 +1,121 @@
+name: Node CI
+on:
+  push:
+    branches: [ "beta" ]
+
+jobs:
+  node_build:
+    runs-on: ubuntu-latest
+    env:
+      projectName: umi-test-action
+      buildStage: beta
+      workDir: .
+      nodeVersion: 20
+      nodePackageManager: pnpm
+      webhookFeishu: https://open.feishu.cn/open-apis/bot/v2/hook/2d66d885-547c-4695-abdb-0ebc89a3eb92
+      tag: ${{ secrets.dockerUrl }}/${{ secrets.dockerRepo }}/${{ env.projectName }}:${{ env.buildStage }}-${{ github.sha }}
+    steps:
+      - name: Post Message
+        uses: foxundermoon/feishu-action@v2
+        with:
+          url: ${{ env.webhookFeishu }}
+          msg_type: post
+          content: |
+            post:
+              zh_cn:
+                title: ${{ env.projectName }} 开始构建
+                content:
+                - - tag: text
+                    un_escape: true
+                    text: '部署环境: ${{ env.buildStage }}'
+                - - tag: text
+                    text: '部署链接: '
+                  - tag: a
+                    text: github action
+                    href: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        if: ${{ env.nodePackageManager == 'pnpm' }}
+        with:
+          version: latest
+
+      - name: Use Node.js v${{env.nodeVersion}} (npm)
+        uses: actions/setup-node@v4
+        if: ${{ env.nodePackageManager == 'npm' }}
+        with:
+          node-version: ${{env.nodeVersion}}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Use Node.js v${{env.nodeVersion}} (pnpm)
+        uses: actions/setup-node@v4
+        if: ${{ env.nodePackageManager == 'pnpm' }}
+        with:
+          node-version: ${{env.nodeVersion}}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Use Node.js v${{env.nodeVersion}} (yarn)
+        uses: actions/setup-node@v4
+        if: ${{ env.nodePackageManager == 'yarn' }}
+        with:
+          node-version: ${{env.nodeVersion}}
+          cache: yarn
+          cache-dependency-path: yarn.lock
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+        if: ${{ env.nodePackageManager == 'npm' }}
+        working-directory: ${{ env.workDir }}
+
+      - name: Install dependencies and build
+        if: ${{ env.nodePackageManager == 'pnpm' }}
+        run: pnpm install
+        working-directory: ${{ env.workDir }}
+
+      - name: Install dependencies
+        if: ${{ env.nodePackageManager == 'yarn' }}
+        run: yarn install --frozen-lockfile
+        working-directory: ${{ env.workDir }}
+
+      - name: Build
+        if: ${{ env.nodePackageManager == 'npm' }}
+        run: npm run build:${{ env.buildStage }}
+        working-directory: ${{ env.workDir }}
+
+      - name: Build
+        if: ${{ env.nodePackageManager == 'pnpm' }}
+        run: pnpm build:${{ env.buildStage }}
+        working-directory: ${{ env.workDir }}
+
+      - name: Build
+        if: ${{ env.nodePackageManager == 'yarn' }}
+        run: yarn build:${{ env.buildStage }}
+        working-directory: ${{ env.workDir }}
+
+      - name: post success message
+        if: always()
+        uses: foxundermoon/feishu-action@v2
+        with:
+          url: ${{ secrets.webhookFeishu }}
+          msg_type: post
+          content: |
+            post:
+              zh_cn:
+                title: ${{ env.projectName }} 构建结果 ${{ job.status }}!
+                content:
+                - - tag: text
+                    un_escape: true
+                    text: '部署环境: ${{ env.buildStage }}'
+                - - tag: text
+                    text: '部署链接: '
+                  - tag: a
+                    text: github action
+                    href: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+                - - tag: text
+                    text: '镜像tag: '
+                  - tag: text
+                    text: ${{ env.tag }}
